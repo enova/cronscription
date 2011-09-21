@@ -1,3 +1,6 @@
+require 'tempfile'
+
+
 module Cronscription
   class Entry
     ORDERED_KEYS = [:min, :hour, :day, :month, :wday]
@@ -24,6 +27,14 @@ module Cronscription
       end
     end
 
+    def to_s
+      @line
+    end
+
+    def ==(other)
+      @line == other.instance_variable_get(:@line)
+    end
+
     def parse_column(column, default=[])
       case column
         when /\*/ then default
@@ -33,15 +44,11 @@ module Cronscription
       end
     end
 
-    def to_s
-      @line
-    end
-
     def match_command?(regex)
       regex === @command
     end
 
-    def times_to_execute_between(start, finish)
+    def times_to_execute(start, finish)
       ret = []
 
       incr_min  = 60
@@ -71,24 +78,54 @@ module Cronscription
   end
 
   class Tab
-    def initialize(crontab_lines)
+    def initialize(cron_lines)
       # Eliminate all lines starting with '#' since they are full comments
-      @entries = crontab_lines.select{|l| l !~ /^\s*#/}.map{|e| Entry.new(e)}
+      @entries = cron_lines.select{|l| l !~ /^\s*#/}.map{|e| Entry.new(e)}
+    end
+
+    def ==(other)
+      @entries == other.instance_variable_get(:@entries)
     end
 
     def find(regex)
       @entries.select{|e| e.match_command?(regex)}
+    end
+
+    def sorted_merge(*arrs)
+      arrs.flatten.uniq.sort
+    end
+
+    def times_to_execute(regex, start, finish)
+      sorted_merge(find(regex).map{|e| e.times_to_execute(start, finish)})
+    end
+  end
+
+  class << self
+    # Convenient construction methods
+    def from_s(str)
+      Tab.new(str.lines.to_a)
+    end
+
+    def from_filepath(path)
+      File.open(path) do |f|
+        Tab.new(f.readlines)
+      end
     end
   end
 end
 
 
 describe Cronscription::Entry do
-  describe 'parse_column' do
-    before :all do
-      @entry = Cronscription::Entry.new('1 2 3 4 5 6')
-    end
+  before :all do
+    @line = '1 2 3 4 5 6'
+    @entry = Cronscription::Entry.new(@line)
+  end
 
+  it 'should be equal when created from same values' do
+    Cronscription::Entry.new(@line).should == @entry
+  end
+
+  describe 'parse_column' do
     it 'should return fixed value as list of one' do
       @entry.parse_column('1').should == [1]
     end
@@ -158,13 +195,13 @@ describe Cronscription::Entry do
     end
   end
 
-  describe 'times_to_execute_between' do
+  describe 'times_to_execute' do
     it 'should return times based on minutes' do
       entry = Cronscription::Entry.new("21-40 * * * * comm")
       start = Time.local(2011, 1, 1, 0, 0)
       finish = Time.local(2011, 1, 1, 0, 30)
 
-      times = entry.times_to_execute_between(start, finish)
+      times = entry.times_to_execute(start, finish)
       times == (21..30).map{|m| Time.local(2011, 1, 1, 0, m)}
     end
 
@@ -173,7 +210,7 @@ describe Cronscription::Entry do
       start = Time.local(2011, 1, 1, 0, 0)
       finish = Time.local(2011, 1, 1, 6, 0)
 
-      times = entry.times_to_execute_between(start, finish)
+      times = entry.times_to_execute(start, finish)
       times == (1..6).map{|h| Time.local(2011, 1, 1, h, 0)}
     end
 
@@ -182,7 +219,7 @@ describe Cronscription::Entry do
       start = Time.local(2011, 1, 5, 0, 0)
       finish = Time.local(2011, 1, 15, 0, 0)
 
-      times = entry.times_to_execute_between(start, finish)
+      times = entry.times_to_execute(start, finish)
       times == (8..15).map{|d| Time.local(2011, 1, d, 0, 0)}
     end
 
@@ -191,7 +228,7 @@ describe Cronscription::Entry do
       start = Time.local(2011, 4, 1, 0, 0)
       finish = Time.local(2011, 12, 1, 0, 0)
 
-      times = entry.times_to_execute_between(start, finish)
+      times = entry.times_to_execute(start, finish)
       times == (4..5).map{|m| Time.local(2011, m, 1, 0, 0)}
     end
   end
@@ -199,7 +236,7 @@ end
 
 describe Cronscription::Tab do
   before :all do
-    @crontab = <<-END
+    @cronstr = <<-END
       # <minute> <hour> <day> <month> <day of week> <tags and command>
       0  *  *  *  *   cron.hourly
       0  0  *  *  *   cron.daily
@@ -207,24 +244,28 @@ describe Cronscription::Tab do
       0  0  1  *  *   cron.monthly
       1  2  3  4  5   0 # test trailing comment
     END
-    @crontab_lines = @crontab.lines.to_a
-    @tab = Cronscription::Tab.new(@crontab_lines)
+    @cron_lines = @cronstr.lines.to_a
+    @tab = Cronscription::Tab.new(@cron_lines)
+  end
+
+  it 'should be equal when created from same values' do
+    Cronscription::Tab.new(@cron_lines).should == @tab
   end
 
   describe 'find' do
     it 'should find the daily entry' do
       entries = @tab.find(/daily/).map{|e| e.to_s}
-      entries.should == [@crontab_lines[2]]
+      entries.should == [@cron_lines[2]]
     end
 
     it 'should find all cron.* entries' do
       entries = @tab.find(/cron\..*/).map{|e| e.to_s}
-      entries.should == @crontab_lines[1..4]
+      entries.should == @cron_lines[1..4]
     end
 
     it 'should ignore complete line comments' do
       entries = @tab.find(/.*/).map{|e| e.to_s}
-      entries.should == @crontab_lines[1..-1]
+      entries.should == @cron_lines[1..-1]
     end
 
     it 'should ignore trailing comments' do
@@ -234,12 +275,60 @@ describe Cronscription::Tab do
 
     it 'should ignore time directives' do
       entries = @tab.find(/0/).map{|e| e.to_s}
-      entries.should == [@crontab_lines[-1]]
+      entries.should == [@cron_lines[-1]]
     end
   end
 
-  describe 'merged_times' do
-    it 'should merge times into sorted array' do
+  describe 'sorted_merge' do
+    before :all do
+      @tab = Cronscription::Tab.new([])
+    end
+
+    it 'should merge in order' do
+      @tab.sorted_merge([1, 4], [2, 7, 9]).should == [1, 2, 4, 7, 9]
+    end
+
+    it 'should merge while eliminating duplicates' do
+      @tab.sorted_merge([2, 2, 2, 6, 7], [7, 8]).should == [2, 6, 7, 8]
+    end
+  end
+
+  describe 'times_to_execute' do
+    it 'should return merged times' do
+      hour1 = 3
+      min1 = 48
+
+      hour2 = 6
+      min2 = 21
+      tab = Cronscription::Tab.new <<-END
+        #{min1}  #{hour1}  *  *  *   common
+        #{min2}  #{hour2}  *  *  *   common
+      END
+
+      start = Time.local(2011, 1, 1, 0, 0)
+      finish = Time.local(2011, 1, 3, 0, 0)
+      tab.times_to_execute(/common/, start, finish).should == [
+                                                      Time.local(2011, 1, 1, hour1, min1),
+                                                      Time.local(2011, 1, 1, hour2, min2),
+                                                      Time.local(2011, 1, 2, hour1, min1),
+                                                      Time.local(2011, 1, 2, hour2, min2),
+                                                    ]
+    end
+  end
+
+  describe 'convenient constructors' do
+    it 'should create from string' do
+      Cronscription.from_s(@cronstr).should == @tab
+    end
+
+    it 'should create from filepath' do
+      path = nil
+      Tempfile.open('cronscription') do |f|
+        f.write(@cronstr)
+        path = f.path
+      end
+
+      Cronscription.from_filepath(path).should == @tab
     end
   end
 end
