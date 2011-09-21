@@ -1,50 +1,73 @@
 class CronParse
-  DEFAULTS = {
-    :min  => 0..59,
-    :hour => 0..23,
-    :day  => 0..31,
-    :mon  => 1..11,
-    :dow  => 0..6,
-  }
-
   def initialize(crontab_lines)
     # Eliminate all lines starting with '#' since they are full comments
-    @lines = crontab_lines.select{|l| l !~ /^\s*#/}
+    @entries = crontab_lines.select{|l| l !~ /^\s*#/}.map{|e| Entry.new(e)}
   end
 
   def find(regex)
-    @lines.select{|l| l.split(nil, 6)[-1].gsub(/#.*$/, '') =~ regex}
+    @entries.select{|e| e.match_command?(regex)}
   end
 
-  def parse_entry(line)
-    raw = {}
-    raw[:min], raw[:hour], raw[:day], raw[:mon], raw[:dow], raw[:command] = line.split(nil, 6)
 
-    entry = {}
-    DEFAULTS.each do |key, range|
-      entry[key] = parse_column(raw[key]).select{|v| range.include?(v) }
+  class Entry
+    CHECK_KEYS = [:min, :hour, :day, :mon, :wday]
+    attr_reader :times, :command
+
+    def initialize(line)
+      @line = line
+      @times = {}
+
+      raw = {}
+      raw[:min], raw[:hour], raw[:day], raw[:mon], raw[:wday], @command = line.split(nil, 6)
+      @command.gsub!(/#.*/, '')
+
+      CHECK_KEYS.each do |key, range|
+        @times[key] = parse_column(raw[key])
+      end
+      @times
     end
-    entry
-  end
 
-  def parse_column(column)
-    if column =~ /,/
-      return column.split(',').map{|c| parse_column(c)}.flatten.uniq
+    def [](key)
+      @times[key]
     end
 
-    if column =~ /-/
-      Range.new(*column.split('-').map{|c| c.to_i}).to_a
-    else
-      [column.to_i]
-    end
-  end
+    def parse_column(column)
+      if column =~ /,/
+        return column.split(',').map{|c| parse_column(c)}.flatten.uniq
+      end
 
-  def executions_of(regex, end_time)
+      if column =~ /-/
+        Range.new(*column.split('-').map{|c| c.to_i}).to_a
+      else
+        [column.to_i]
+      end
+    end
+
+    def filter_bounds(entry, start, finish)
+      entry.map do |k, vals|
+        start_val  = start.send(k)
+        finish_val = finish.send(k)
+        if start_val < finish_val
+          vals.select{|v| start_val < v && v < finish_val}
+        else
+          vals
+        end
+      end
+    end
+
+    def to_s
+      @line
+    end
+
+    def match_command?(regex)
+      regex === @command
+    end
   end
 end
 
 
-describe 'CronParse' do
+
+describe CronParse do
   before :all do
     @crontab = <<-END
       # <minute> <hour> <day> <month> <day of week> <tags and command>
@@ -60,71 +83,92 @@ describe 'CronParse' do
 
   describe 'find' do
     it 'should find the daily entry' do
-      entries = @cron_parse.find(/daily/)
+      entries = @cron_parse.find(/daily/).map{|e| e.to_s}
       entries.should == [@crontab_lines[2]]
     end
 
     it 'should find all cron.* entries' do
-      entries = @cron_parse.find(/cron\..*/)
+      entries = @cron_parse.find(/cron\..*/).map{|e| e.to_s}
       entries.should == @crontab_lines[1..4]
     end
 
     it 'should ignore complete line comments' do
-      entries = @cron_parse.find(/.*/)
+      entries = @cron_parse.find(/.*/).map{|e| e.to_s}
       entries.should == @crontab_lines[1..-1]
     end
 
     it 'should ignore trailing comments' do
-      entries = @cron_parse.find(/test trailing comment/)
+      entries = @cron_parse.find(/test trailing comment/).map{|e| e.to_s}
       entries.should == []
     end
 
     it 'should ignore time directives' do
-      entries = @cron_parse.find(/0/)
+      entries = @cron_parse.find(/0/).map{|e| e.to_s}
       entries.should == [@crontab_lines[-1]]
+    end
+  end
+end
+
+describe CronParse::Entry do
+  describe 'from_s' do
+    it 'should map columns with correct fields' do
+      # <minute> <hour> <day> <month> <day of week> <tags and command>
+      entry = CronParse::Entry.new('1 2 3 4 5 comm')
+      entry.times[:min].should  == [1]
+      entry.times[:hour].should == [2]
+      entry.times[:day].should  == [3]
+      entry.times[:mon].should  == [4]
+      entry.times[:wday].should == [5]
+      entry.command.should      == 'comm'
+    end
+
+    it 'should convert to original line on to_s' do
+      line = '      1 2 3 4 5 fun today! # some comment'
+      entry = CronParse::Entry.new(line)
+      entry.to_s.should == line
     end
   end
 
   describe 'parse_column' do
+    before :all do
+      @entry = CronParse::Entry.new('1 2 3 4 5 6')
+    end
+
     it 'should return fixed value as list of one' do
-      @cron_parse.parse_column('1').should == [1]
+      @entry.parse_column('1').should == [1]
     end
 
     it 'should return comma-separated as list of values' do
-      @cron_parse.parse_column('5,2,8').should == [5, 2, 8]
+      @entry.parse_column('5,2,8').should == [5, 2, 8]
     end
 
     it 'should return range as list of everything within the range' do
-      @cron_parse.parse_column('4-6').should == [4, 5, 6]
+      @entry.parse_column('4-6').should == [4, 5, 6]
     end
 
     it 'should return combination of range and comma-separated' do
-      @cron_parse.parse_column('9, 2-5,7').should == [9, 2, 3, 4, 5, 7]
+      @entry.parse_column('9,2-5,7').should == [9, 2, 3, 4, 5, 7]
     end
 
     it 'should return unique entries only' do
-      @cron_parse.parse_column('1,1,1').should == [1]
+      @entry.parse_column('1,1,1').should == [1]
     end
   end
 
-  describe 'executions_by' do
-    # <minute> <hour> <day> <month> <day of week> <tags and command>
-    def this_time_tomorrow
-      t = Time.now
-      Time.local(t.year, t.month, t.day+1, t.hour, t.min, t.sec)
+  describe 'match_command?' do
+    it 'should match command by regex' do
+      entry = CronParse::Entry.new('1 2 3 4 5 command one')
+      entry.match_command?(/m*and\s*on/).should be_true
     end
 
-    def midnight_tomorrow
-      t = this_time_tomorrow
-      Time.local(t.year, t.month, t.day)
+    it 'should not match command within comments' do
+      entry = CronParse::Entry.new('1 2 3 4 5 command #herp')
+      entry.match_command?(/herp/).should be_false
     end
 
-    it 'should return single execution of command by tomorrow' do
-      crontab_lines = ['0  0  *  *  *   midnight-run']
-      cron_parse = CronParse.new(crontab_lines)
-
-      executions = cron_parse.executions_of('midnight-run', this_time_tomorrow)
-      executions.should == [midnight_tomorrow]
+    it 'should not match command within time directives' do
+      entry = CronParse::Entry.new('1 2 3 4 5 command #herp')
+      entry.match_command?(/\d/).should be_false
     end
   end
 end
