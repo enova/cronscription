@@ -27,12 +27,16 @@ module Cronscription
       end
     end
 
+    def ==(other)
+      @line == other.instance_variable_get(:@line)
+    end
+
     def to_s
       @line
     end
 
-    def ==(other)
-      @line == other.instance_variable_get(:@line)
+    def self.parsable?(str)
+      !!(str =~ /([*\d,-]+\s+){5}.*/)
     end
 
     def parse_column(column, default=[])
@@ -56,8 +60,12 @@ module Cronscription
       incr_day  = incr_hour*24
       incr      = incr_min
 
-      current = start
-      while current < finish
+      if start.sec == 0
+        current = start
+      else
+        current = Time.local(start.year, start.month, start.day, start.hour, start.min + 1, 0)
+      end
+      while current <= finish
         if ORDERED_KEYS.map{|k| @times[k].include?(current.send k)}.all?
           ret << current 
           # If only I could goto into the middle of the loop, this wouldn't run every time.
@@ -80,7 +88,7 @@ module Cronscription
   class Tab
     def initialize(cron_lines)
       # Eliminate all lines starting with '#' since they are full comments
-      @entries = cron_lines.select{|l| l !~ /^\s*#/}.map{|e| Entry.new(e)}
+      @entries = cron_lines.select{|l| Entry.parsable?(l)}.map{|e| Entry.new(e)}
     end
 
     def ==(other)
