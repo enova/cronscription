@@ -159,5 +159,14 @@ describe Cronscription::Entry do
       times = entry.times_to_execute(start, finish)
       times.should == [Time.local(2011, 1, 1, 0, 1)]
     end
+
+    it 'should round start time up by bumping up necessary other fields' do
+      entry = Cronscription::Entry.new("* * * * * comm")
+      start  = Time.local(2011, 12, 31, 23, 59, 45)
+      finish = Time.local(2012, 1, 1, 0, 0, 45)
+
+      times = entry.times_to_execute(start, finish)
+      times.should == [Time.local(2012, 1, 1, 0, 0)]
+    end
   end
 end

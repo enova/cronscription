@@ -57,11 +57,7 @@ module Cronscription
       incr_day  = incr_hour*24
       incr      = incr_min
 
-      if start.sec == 0
-        current = start
-      else
-        current = Time.local(start.year, start.month, start.day, start.hour, start.min + 1, 0)
-      end
+      current = nearest_minute(start)
       while current <= finish
         if ORDERED_KEYS.map{|k| @times[k].include?(current.send k)}.all?
           ret << current 
@@ -79,6 +75,16 @@ module Cronscription
       end
 
       ret
+    end
+
+    private
+    def nearest_minute(time)
+      if time.sec == 0
+        time
+      else
+        # Always round up
+        time + (60 - time.sec)
+      end
     end
   end
 end
