@@ -1,6 +1,3 @@
-require 'tempfile'
-
-
 module Cronscription
   class Entry
     ORDERED_KEYS = [:min, :hour, :day, :month, :wday]

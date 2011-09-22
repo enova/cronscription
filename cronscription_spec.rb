@@ -1,5 +1,7 @@
 require File.join(File.dirname(__FILE__), 'cronscription')
 
+require 'tempfile'
+
 
 describe Cronscription::Entry do
   before :all do
@@ -242,10 +244,11 @@ describe Cronscription::Tab do
 
       hour2 = 6
       min2 = 21
-      tab = Cronscription::Tab.new <<-END
+      cronfile = <<-END
         #{min1}  #{hour1}  *  *  *   common
         #{min2}  #{hour2}  *  *  *   common
       END
+      tab = Cronscription::Tab.new(cronfile.lines.to_a)
 
       start = Time.local(2011, 1, 1, 0, 0)
       finish = Time.local(2011, 1, 3, 0, 0)
