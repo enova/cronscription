@@ -92,6 +92,11 @@ describe Cronscription::Entry do
       @entry.parse_column('*', default).should == default
     end
 
+    it 'should find every n minutes from the default on */n' do
+      default = [*0..100]
+      @entry.parse_column('*/31', default).should == [0, 31, 62, 93]
+    end
+
     it 'should return unique entries only' do
       @entry.parse_column('1,1,1').should == [1]
     end
