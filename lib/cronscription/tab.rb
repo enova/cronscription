@@ -1,5 +1,4 @@
 require 'cronscription/entry'
-require 'cronscription/version'
 
 
 module Cronscription

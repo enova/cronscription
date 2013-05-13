@@ -1,4 +1,5 @@
 require 'cronscription/tab'
+require 'cronscription/version'
 
 
 module Cronscription

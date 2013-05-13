@@ -7,7 +7,7 @@ Gem::Specification.new do |s|
   s.version     = Cronscription::VERSION
   s.authors     = ["Ben Feng"]
   s.email       = ["bfeng@enova.com"]
-  s.homepage    = "https://git.cashnetusa.com/bfeng/cronscription"
+  s.homepage    = "https://github.com/enova/cronscription"
   s.summary     = %q{Cron parsing}
   s.description = %q{Cron parsing}
 
