@@ -1,3 +1,4 @@
+require 'spec_helper'
 require 'cronscription/entry'
 
 
@@ -90,6 +91,11 @@ describe Cronscription::Entry do
     it 'should use default value on asterisk' do
       default = [1, 5, 9, 2, 6]
       @entry.parse_column('*', default).should == default
+    end
+
+    it 'should find every n minutes from the default on */n' do
+      default = [*0..100]
+      @entry.parse_column('*/31', default).should == [0, 31, 62, 93]
     end
 
     it 'should return unique entries only' do

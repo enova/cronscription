@@ -38,10 +38,11 @@ module Cronscription
 
     def parse_column(column, default=[])
       case column
-        when /\*/ then default
-        when /,/  then column.split(',').map{|c| parse_column(c)}.flatten.uniq
-        when /-/  then Range.new(*column.split('-').map{|c| c.to_i}).to_a
-        else           [column.to_i]
+        when /\*\/(\d+)/ then default.select { |val| val % $1.to_i == 0 }
+        when /\*/        then default
+        when /,/         then column.split(',').map{|c| parse_column(c)}.flatten.uniq
+        when /-/         then Range.new(*column.split('-').map{|c| c.to_i}).to_a
+        else                  [column.to_i]
       end
     end
 
@@ -60,7 +61,7 @@ module Cronscription
       current = nearest_minute(start)
       while current <= finish
         if ORDERED_KEYS.map{|k| @times[k].include?(current.send k)}.all?
-          ret << current 
+          ret << current
           # If only I could goto into the middle of the loop, this wouldn't run every time.
           # Optimizations to reduce execution time.  No need to run minutely if there is only one minute.
           if @times[:min].size == 1
